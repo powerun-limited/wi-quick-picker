@@ -1,4 +1,4 @@
-// WI Quick Picker v1.1
+// WI Quick Picker v1.2
 
 (function () {
     'use strict';
@@ -15,7 +15,7 @@
             top: 10%;
             left: 50%;
             transform: translateX(-50%);
-            width: min(540px, 95vw);
+            width: min(560px, 96vw);
             max-height: 75vh;
             background: var(--SmartThemeBodyColor, #1e1e1e);
             border: 1px solid var(--SmartThemeBorderColor, #555);
@@ -47,92 +47,161 @@
         if (modal) modal.style.display = 'none';
     }
 
- async function getActiveTitles() {
-    const titles = new Set();
+    // Returnerar lista med objekt: { title, bookName, uid }
+    async function getActiveEntries() {
+        const entries = [];
 
-    try {
-        const ctx = window.SillyTavern?.getContext?.();
-        if (!ctx) {
-            console.warn('[WI Quick Picker] Ingen context hittades');
-            return [];
-        }
+        try {
+            const ctx = window.SillyTavern?.getContext?.();
+            if (!ctx) return [];
 
-        // Hitta vilka World Info-böcker som är markerade som aktiva
-        const select = document.getElementById('world_info');
-        const activeBooks = [];
+            const select = document.getElementById('world_info');
+            const activeBooks = [];
 
-        if (select) {
-            for (const option of select.options) {
-                if (option.selected) {
-                    activeBooks.push(option.textContent.trim());
-                }
-            }
-        }
-
-        console.log('[WI Quick Picker] Aktiva böcker:', activeBooks);
-
-        // Ladda varje aktiv bok och hämta titlar
-        for (const bookName of activeBooks) {
-            try {
-                const data = await ctx.loadWorldInfo(bookName);
-                if (data && data.entries) {
-                    for (const uid in data.entries) {
-                        const entry = data.entries[uid];
-                        const title = (entry.comment || entry.title || '').trim();
-                        if (title) {
-                            titles.add(title);
-                        }
+            if (select) {
+                for (const option of select.options) {
+                    if (option.selected) {
+                        activeBooks.push(option.textContent.trim());
                     }
                 }
-            } catch (err) {
-                console.warn(`[WI Quick Picker] Kunde inte ladda boken "${bookName}":`, err);
             }
+
+            console.log('[WI Quick Picker] Aktiva böcker:', activeBooks);
+
+            for (const bookName of activeBooks) {
+                try {
+                    const data = await ctx.loadWorldInfo(bookName);
+                    if (data?.entries) {
+                        for (const uid in data.entries) {
+                            const entry = data.entries[uid];
+                            const title = (entry.comment || entry.title || '').trim();
+                            if (title) {
+                                entries.push({
+                                    title,
+                                    bookName,
+                                    uid
+                                });
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`Kunde inte ladda "${bookName}":`, err);
+                }
+            }
+        } catch (err) {
+            console.error('[WI Quick Picker] Fel:', err);
         }
 
-    } catch (err) {
-        console.error('[WI Quick Picker] Fel:', err);
+        // Sortera efter titel
+        entries.sort((a, b) => a.title.localeCompare(b.title));
+        console.log('[WI Quick Picker] Hittade entries:', entries.length);
+        return entries;
     }
 
-    console.log('[WI Quick Picker] Hittade titlar:', titles.size);
-    return Array.from(titles).sort((a, b) => a.localeCompare(b));
-}
+    async function openWorldInfoEntry(bookName, uid) {
+        try {
+            // Öppna World Info-panelen om den är stängd
+            const wiButton = document.querySelector('#WI_Button, [title*="World Info"], [title*="Lorebook"], #world_info_button');
+            if (wiButton) {
+                wiButton.click();
+            }
 
-   async function showPicker() {
-    createModal();
-    const modal = document.getElementById('wi-quick-picker-modal');
-    const input = document.getElementById('wi-picker-input');
-    const results = document.getElementById('wi-picker-results');
+            // Vänta lite så panelen hinner öppnas
+            await new Promise(r => setTimeout(r, 300));
 
-    results.innerHTML = `<div style="padding:20px;text-align:center;opacity:0.7">Laddar World Info...</div>`;
-    modal.style.display = 'flex';
+            // Välj rätt bok i selecten
+            const select = document.getElementById('world_info');
+            if (select) {
+                for (const option of select.options) {
+                    if (option.textContent.trim() === bookName) {
+                        // Avmarkera alla och markera bara den här
+                        for (const opt of select.options) opt.selected = false;
+                        option.selected = true;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                        break;
+                    }
+                }
+            }
 
-    const allTitles = await getActiveTitles();
+            // Försök hitta och expandera entryn
+            await new Promise(r => setTimeout(r, 400));
 
-    function render(filter = '') {
-        const q = filter.toLowerCase().trim();
-        const filtered = q ? allTitles.filter(t => t.toLowerCase().includes(q)) : allTitles;
+            // Leta efter entry med rätt uid
+            const entryEl = document.querySelector(`[data-uid="${uid}"], .world_entry[data-uid="${uid}"]`);
+            if (entryEl) {
+                entryEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Försök klicka för att expandera
+                const header = entryEl.querySelector('.inline-drawer-toggle, .world_entry_form, .entry-header, summary');
+                if (header) header.click();
+            } else {
+                // Fallback: ladda om editorn
+                const ctx = window.SillyTavern?.getContext?.();
+                if (ctx?.reloadWorldInfoEditor) {
+                    ctx.reloadWorldInfoEditor(bookName, true);
+                }
+            }
 
-        results.innerHTML = filtered.length
-            ? filtered.map(title => 
-                `<div class="wi-item" style="padding:12px 18px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06)">${title}</div>`
-              ).join('')
-            : `<div style="padding:24px;text-align:center;opacity:0.6">Inga träffar</div>`;
-
-        results.querySelectorAll('.wi-item').forEach(el => {
-            el.onmouseenter = () => el.style.background = 'rgba(255,255,255,0.08)';
-            el.onmouseleave = () => el.style.background = 'transparent';
-            el.onclick = () => {
-                insertIntoChat(el.textContent);
-                closeModal();
-            };
-        });
+            closeModal();
+        } catch (err) {
+            console.error('Kunde inte öppna entry:', err);
+            alert('Kunde inte öppna entryt automatiskt. Öppna World Info manuellt.');
+        }
     }
 
-    input.oninput = () => render(input.value);
-    input.value = '';
-    render();
-    setTimeout(() => input.focus(), 50);
-}
+    async function showPicker() {
+        createModal();
+        const modal = document.getElementById('wi-quick-picker-modal');
+        const input = document.getElementById('wi-picker-input');
+        const results = document.getElementById('wi-picker-results');
+
+        results.innerHTML = `<div style="padding:20px;text-align:center;opacity:0.7">Laddar World Info...</div>`;
+        modal.style.display = 'flex';
+
+        const allEntries = await getActiveEntries();
+
+        function render(filter = '') {
+            const q = filter.toLowerCase().trim();
+            const filtered = q
+                ? allEntries.filter(e => e.title.toLowerCase().includes(q))
+                : allEntries;
+
+            if (filtered.length === 0) {
+                results.innerHTML = `<div style="padding:24px;text-align:center;opacity:0.6">Inga träffar</div>`;
+                return;
+            }
+
+            results.innerHTML = filtered.map(entry => `
+                <div class="wi-item" style="display:flex; align-items:center; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); gap: 10px;">
+                    <div class="wi-title" style="flex:1; cursor:pointer; padding: 4px 0;">${entry.title}</div>
+                    <button class="wi-edit-btn menu_button" data-book="${entry.bookName}" data-uid="${entry.uid}" 
+                        style="padding: 4px 10px; font-size: 12px; min-width: auto; white-space: nowrap;" title="Öppna i World Info">
+                        ✎
+                    </button>
+                </div>
+            `).join('');
+
+            // Klick på titel = infoga
+            results.querySelectorAll('.wi-title').forEach(el => {
+                el.onclick = () => {
+                    insertIntoChat(el.textContent);
+                    closeModal();
+                };
+            });
+
+            // Klick på redigera-knapp
+            results.querySelectorAll('.wi-edit-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    openWorldInfoEntry(btn.dataset.book, btn.dataset.uid);
+                };
+            });
+        }
+
+        input.oninput = () => render(input.value);
+        input.value = '';
+        render();
+        setTimeout(() => input.focus(), 50);
+    }
 
     function insertIntoChat(text) {
         const ta = document.getElementById('send_textarea');
@@ -145,7 +214,6 @@
         ta.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
-    // === Lägg till en synlig knapp ===
     function addButton() {
         if (document.getElementById('wi-picker-btn')) return;
 
@@ -176,7 +244,6 @@
         document.body.appendChild(btn);
     }
 
-    // Genväg (fungerar bättre på dator)
     document.addEventListener('keydown', e => {
         if (e.ctrlKey && e.shiftKey && e.code === 'KeyF') {
             e.preventDefault();
@@ -186,15 +253,12 @@
         if (e.key === 'Escape') closeModal();
     }, true);
 
-    // Starta när sidan är redo
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', addButton);
     } else {
         addButton();
     }
-
-    // Extra säkerhet – försök igen efter en stund
     setTimeout(addButton, 2000);
 
-    console.log('%c[WI Quick Picker] Redo – klicka på WI-knappen nere till höger eller Ctrl+Shift+F', 'color: #6f6');
+    console.log('%c[WI Quick Picker] v1.2 redo', 'color: #6f6');
 })();
