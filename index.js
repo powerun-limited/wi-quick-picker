@@ -47,59 +47,46 @@
         if (modal) modal.style.display = 'none';
     }
 
- function getActiveTitles() {
+ async function getActiveTitles() {
     const titles = new Set();
 
     try {
-        // Metod 1: Via window.world_info (vanligast)
-        if (window.world_info && window.world_info.data) {
-            for (const bookName in window.world_info.data) {
-                const book = window.world_info.data[bookName];
-                if (!book || !book.entries) continue;
+        const ctx = window.SillyTavern?.getContext?.();
+        if (!ctx) {
+            console.warn('[WI Quick Picker] Ingen context hittades');
+            return [];
+        }
 
-                for (const uid in book.entries) {
-                    const entry = book.entries[uid];
-                    if (!entry) continue;
+        // Hitta vilka World Info-böcker som är markerade som aktiva
+        const select = document.getElementById('world_info');
+        const activeBooks = [];
 
-                    // Titeln ligger nästan alltid i "comment"
-                    const title = (entry.comment || entry.title || entry.name || '').trim();
-                    if (title.length > 1) {
-                        titles.add(title);
-                    }
+        if (select) {
+            for (const option of select.options) {
+                if (option.selected) {
+                    activeBooks.push(option.textContent.trim());
                 }
             }
         }
 
-        // Metod 2: Via SillyTavern.getContext() (nyare versioner)
-        if (titles.size === 0 && window.SillyTavern?.getContext) {
-            const ctx = window.SillyTavern.getContext();
-            if (ctx?.worldInfoData) {
-                // Beroende på version
-                console.log('Försöker via getContext...');
-            }
-        }
+        console.log('[WI Quick Picker] Aktiva böcker:', activeBooks);
 
-        // Metod 3: Läs direkt från World Info-panelen i DOM (fungerar även om den är stängd ibland)
-        if (titles.size === 0) {
-            document.querySelectorAll('#WorldInfo .world_entry, #WorldInfo .wi-entry, [data-uid]').forEach(el => {
-                const commentEl = el.querySelector('textarea[name="comment"], input[name="comment"], .comment');
-                if (commentEl) {
-                    const t = (commentEl.value || commentEl.textContent || '').trim();
-                    if (t) titles.add(t);
-                }
-            });
-        }
-
-        // Metod 4: Sista utväg – titta efter alla textareas som ser ut som WI-titlar
-        if (titles.size === 0) {
-            document.querySelectorAll('textarea').forEach(ta => {
-                if (ta.name === 'comment' || ta.placeholder?.toLowerCase().includes('title') || ta.placeholder?.toLowerCase().includes('comment')) {
-                    const t = ta.value.trim();
-                    if (t.length > 2 && t.length < 120) {
-                        titles.add(t);
+        // Ladda varje aktiv bok och hämta titlar
+        for (const bookName of activeBooks) {
+            try {
+                const data = await ctx.loadWorldInfo(bookName);
+                if (data && data.entries) {
+                    for (const uid in data.entries) {
+                        const entry = data.entries[uid];
+                        const title = (entry.comment || entry.title || '').trim();
+                        if (title) {
+                            titles.add(title);
+                        }
                     }
                 }
-            });
+            } catch (err) {
+                console.warn(`[WI Quick Picker] Kunde inte ladda boken "${bookName}":`, err);
+            }
         }
 
     } catch (err) {
@@ -110,39 +97,42 @@
     return Array.from(titles).sort((a, b) => a.localeCompare(b));
 }
 
-    function showPicker() {
-        createModal();
-        const modal = document.getElementById('wi-quick-picker-modal');
-        const input = document.getElementById('wi-picker-input');
-        const results = document.getElementById('wi-picker-results');
-        const allTitles = getActiveTitles();
+   async function showPicker() {
+    createModal();
+    const modal = document.getElementById('wi-quick-picker-modal');
+    const input = document.getElementById('wi-picker-input');
+    const results = document.getElementById('wi-picker-results');
 
-        function render(filter = '') {
-            const q = filter.toLowerCase().trim();
-            const filtered = q ? allTitles.filter(t => t.toLowerCase().includes(q)) : allTitles;
+    results.innerHTML = `<div style="padding:20px;text-align:center;opacity:0.7">Laddar World Info...</div>`;
+    modal.style.display = 'flex';
 
-            results.innerHTML = filtered.length
-                ? filtered.map(title => 
-                    `<div class="wi-item" style="padding:12px 18px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06)">${title}</div>`
-                  ).join('')
-                : `<div style="padding:24px;text-align:center;opacity:0.6">Inga träffar</div>`;
+    const allTitles = await getActiveTitles();
 
-            results.querySelectorAll('.wi-item').forEach(el => {
-                el.onmouseenter = () => el.style.background = 'rgba(255,255,255,0.08)';
-                el.onmouseleave = () => el.style.background = 'transparent';
-                el.onclick = () => {
-                    insertIntoChat(el.textContent);
-                    closeModal();
-                };
-            });
-        }
+    function render(filter = '') {
+        const q = filter.toLowerCase().trim();
+        const filtered = q ? allTitles.filter(t => t.toLowerCase().includes(q)) : allTitles;
 
-        input.oninput = () => render(input.value);
-        input.value = '';
-        render();
-        modal.style.display = 'flex';
-        setTimeout(() => input.focus(), 50);
+        results.innerHTML = filtered.length
+            ? filtered.map(title => 
+                `<div class="wi-item" style="padding:12px 18px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06)">${title}</div>`
+              ).join('')
+            : `<div style="padding:24px;text-align:center;opacity:0.6">Inga träffar</div>`;
+
+        results.querySelectorAll('.wi-item').forEach(el => {
+            el.onmouseenter = () => el.style.background = 'rgba(255,255,255,0.08)';
+            el.onmouseleave = () => el.style.background = 'transparent';
+            el.onclick = () => {
+                insertIntoChat(el.textContent);
+                closeModal();
+            };
+        });
     }
+
+    input.oninput = () => render(input.value);
+    input.value = '';
+    render();
+    setTimeout(() => input.focus(), 50);
+}
 
     function insertIntoChat(text) {
         const ta = document.getElementById('send_textarea');
