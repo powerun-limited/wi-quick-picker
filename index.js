@@ -47,25 +47,68 @@
         if (modal) modal.style.display = 'none';
     }
 
-    function getActiveTitles() {
-        const titles = new Set();
+ function getActiveTitles() {
+    const titles = new Set();
 
-        try {
-            if (window.world_info?.data) {
-                for (const book of Object.values(window.world_info.data)) {
-                    if (!book?.entries) continue;
-                    for (const entry of Object.values(book.entries)) {
-                        const title = (entry.comment || entry.title || '').trim();
-                        if (title) titles.add(title);
+    try {
+        // Metod 1: Via window.world_info (vanligast)
+        if (window.world_info && window.world_info.data) {
+            for (const bookName in window.world_info.data) {
+                const book = window.world_info.data[bookName];
+                if (!book || !book.entries) continue;
+
+                for (const uid in book.entries) {
+                    const entry = book.entries[uid];
+                    if (!entry) continue;
+
+                    // Titeln ligger nästan alltid i "comment"
+                    const title = (entry.comment || entry.title || entry.name || '').trim();
+                    if (title.length > 1) {
+                        titles.add(title);
                     }
                 }
             }
-        } catch (e) {
-            console.error(e);
         }
 
-        return [...titles].sort((a, b) => a.localeCompare(b));
+        // Metod 2: Via SillyTavern.getContext() (nyare versioner)
+        if (titles.size === 0 && window.SillyTavern?.getContext) {
+            const ctx = window.SillyTavern.getContext();
+            if (ctx?.worldInfoData) {
+                // Beroende på version
+                console.log('Försöker via getContext...');
+            }
+        }
+
+        // Metod 3: Läs direkt från World Info-panelen i DOM (fungerar även om den är stängd ibland)
+        if (titles.size === 0) {
+            document.querySelectorAll('#WorldInfo .world_entry, #WorldInfo .wi-entry, [data-uid]').forEach(el => {
+                const commentEl = el.querySelector('textarea[name="comment"], input[name="comment"], .comment');
+                if (commentEl) {
+                    const t = (commentEl.value || commentEl.textContent || '').trim();
+                    if (t) titles.add(t);
+                }
+            });
+        }
+
+        // Metod 4: Sista utväg – titta efter alla textareas som ser ut som WI-titlar
+        if (titles.size === 0) {
+            document.querySelectorAll('textarea').forEach(ta => {
+                if (ta.name === 'comment' || ta.placeholder?.toLowerCase().includes('title') || ta.placeholder?.toLowerCase().includes('comment')) {
+                    const t = ta.value.trim();
+                    if (t.length > 2 && t.length < 120) {
+                        titles.add(t);
+                    }
+                }
+            });
+        }
+
+    } catch (err) {
+        console.error('[WI Quick Picker] Fel:', err);
     }
+
+    console.log('[WI Quick Picker] Hittade titlar:', titles.size);
+    return Array.from(titles).sort((a, b) => a.localeCompare(b));
+}
 
     function showPicker() {
         createModal();
