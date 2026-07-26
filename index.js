@@ -89,39 +89,50 @@
         return entries;
     }
 
-    async function openEntry(bookName, uid) {
-        try {
-            // Öppna World Info-panelen
-            const wiBtn = document.querySelector('#WI_Button, [id*="world_info"], [title*="World Info"], [title*="Lore"]');
-            if (wiBtn) wiBtn.click();
-
-            await new Promise(r => setTimeout(r, 350));
-
-            // Välj rätt bok
-            const select = document.getElementById('world_info');
-            if (select) {
-                for (const opt of select.options) {
-                    opt.selected = (opt.textContent.trim() === bookName);
-                }
-                select.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-
-            await new Promise(r => setTimeout(r, 400));
-
-            // Försök hitta och expandera entryt
-            const entryEl = document.querySelector(`[data-uid="${uid}"]`);
-            if (entryEl) {
-                entryEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                const toggle = entryEl.querySelector('.inline-drawer-toggle, summary, .world_entry_form, .entry-header');
-                if (toggle) toggle.click();
-            }
-
-            closeModal();
-        } catch (err) {
-            console.error('Kunde inte öppna entry:', err);
-            alert('Kunde inte öppna entryt automatiskt.');
+async function openEntry(bookName, uid) {
+    try {
+        // 1. Öppna World Info-panelen om den är stängd
+        const wiBtn = document.querySelector('#WI_Button, [title*="World Info"], [title*="Lorebook"], #world_info_button, .wi_button');
+        if (wiBtn) {
+            wiBtn.click();
         }
+
+        // Vänta så panelen hinner renderas
+        await new Promise(r => setTimeout(r, 400));
+
+        // 2. Försök hitta entryt direkt via uid (utan att röra vilka böcker som är valda)
+        let entryEl = document.querySelector(`[data-uid="${uid}"]`);
+
+        // Ibland ligger uid på ett barn-element
+        if (!entryEl) {
+            entryEl = document.querySelector(`[data-uid="${uid}"]`)?.closest('.world_entry, .wi-entry, .inline-drawer');
+        }
+
+        if (entryEl) {
+            // Scrolla fram entryt
+            entryEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // Försök expandera det
+            const toggle = entryEl.querySelector(
+                '.inline-drawer-toggle, summary, .world_entry_form, .entry-header, .inline-drawer-header, .fa-chevron-down, .fa-chevron-right'
+            );
+            if (toggle) {
+                toggle.click();
+            }
+
+            // Markera det visuellt en kort stund
+            entryEl.style.outline = '2px solid #6af';
+            setTimeout(() => entryEl.style.outline = '', 2000);
+        } else {
+            console.warn('[WI Quick Picker] Hittade inte entry med uid:', uid);
+            // Fallback: bara öppna panelen, användaren får leta manuellt
+        }
+
+        closeModal();
+    } catch (err) {
+        console.error('Kunde inte öppna entry:', err);
     }
+}
 
     async function showPicker() {
         createModal();
