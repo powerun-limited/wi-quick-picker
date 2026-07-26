@@ -89,43 +89,46 @@
         return entries;
     }
 
-async function openEntry(bookName, uid) {
+async function openEntry(bookName, uid, title) {
     try {
-        // 1. Öppna World Info-panelen om den är stängd
-        const wiBtn = document.querySelector('#WI_Button, [title*="World Info"], [title*="Lorebook"], #world_info_button, .wi_button');
-        if (wiBtn) {
-            wiBtn.click();
+        // Öppna World Info-panelen
+        const wiBtn = document.querySelector('#WI_Button, [title*="World Info"], [title*="Lorebook"], #world_info_button');
+        if (wiBtn) wiBtn.click();
+
+        await new Promise(r => setTimeout(r, 500));
+
+        // Försök hitta entryt via titeln (mer pålitligt än uid)
+        const allEntries = document.querySelectorAll('.world_entry, .wi-entry, .inline-drawer, [data-uid]');
+        let found = null;
+
+        for (const el of allEntries) {
+            const text = el.textContent || '';
+            if (text.includes(title)) {
+                found = el;
+                break;
+            }
         }
 
-        // Vänta så panelen hinner renderas
-        await new Promise(r => setTimeout(r, 400));
+        if (found) {
+            // Scrolla fram det
+            found.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-        // 2. Försök hitta entryt direkt via uid (utan att röra vilka böcker som är valda)
-        let entryEl = document.querySelector(`[data-uid="${uid}"]`);
-
-        // Ibland ligger uid på ett barn-element
-        if (!entryEl) {
-            entryEl = document.querySelector(`[data-uid="${uid}"]`)?.closest('.world_entry, .wi-entry, .inline-drawer');
-        }
-
-        if (entryEl) {
-            // Scrolla fram entryt
-            entryEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-            // Försök expandera det
-            const toggle = entryEl.querySelector(
-                '.inline-drawer-toggle, summary, .world_entry_form, .entry-header, .inline-drawer-header, .fa-chevron-down, .fa-chevron-right'
+            // Försök expandera
+            const possibleToggles = found.querySelectorAll(
+                '.inline-drawer-toggle, summary, .world_entry_form, .entry-header, .inline-drawer-header, .fa-chevron-down, .fa-chevron-right, .drawer-toggle'
             );
-            if (toggle) {
+
+            for (const toggle of possibleToggles) {
                 toggle.click();
             }
 
-            // Markera det visuellt en kort stund
-            entryEl.style.outline = '2px solid #6af';
-            setTimeout(() => entryEl.style.outline = '', 2000);
+            // Markera det tillfälligt
+            found.style.outline = '2px solid #4af';
+            setTimeout(() => {
+                if (found) found.style.outline = '';
+            }, 2500);
         } else {
-            console.warn('[WI Quick Picker] Hittade inte entry med uid:', uid);
-            // Fallback: bara öppna panelen, användaren får leta manuellt
+            console.warn('[WI Quick Picker] Hittade inte entry med titel:', title);
         }
 
         closeModal();
@@ -161,7 +164,7 @@ async function openEntry(bookName, uid) {
             results.querySelectorAll('.wi-item').forEach(el => {
                 el.onmouseenter = () => el.style.background = 'rgba(255,255,255,0.08)';
                 el.onmouseleave = () => el.style.background = 'transparent';
-                el.onclick = () => openEntry(el.dataset.book, el.dataset.uid);
+                el.onclick = () => openEntry(el.dataset.book, el.dataset.uid, el.textContent.trim());
             });
         }
 
